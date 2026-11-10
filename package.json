@@ -1,0 +1,13 @@
+{
+  "name": "flop-text",
+  "version": "0.2.0",
+  "description": "Translate, summarize and ask on FLOP devnet inference, by gateway key or a direct session from your own wallet",
+  "type": "module",
+  "bin": { "flop-text": "flop-text.mjs" },
+  "scripts": { "test": "node --test test/flop-text.test.mjs" },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@polkadot/api": "^17.0.1"
+  },
+  "license": "MIT"
+}
