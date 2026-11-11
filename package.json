@@ -1,6 +1,6 @@
 {
   "name": "flop-text",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Translate, summarize and ask on FLOP devnet inference, by gateway key or a direct session from your own wallet",
   "type": "module",
   "bin": { "flop-text": "flop-text.mjs" },

@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const GATEWAY = (process.env.FLOP_GATEWAY_URL || "https://api.flop.network/v1").replace(/\/$/, "");
 const EXPLORER = (process.env.FLOP_EXPLORER_URL || "https://explorer.devnet.flop.network").replace(/\/$/, "");
 const RPC = process.env.FLOP_RPC_URL || "wss://rpc.devnet.flop.network";
@@ -237,12 +237,19 @@ const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => se
 
 const check = async () => {
   const res = {};
-  const [health] = await Promise.allSettled([getJson(GATEWAY.replace(/\/v1$/, "") + "/health", 15000)]);
+  const [health, offers] = await Promise.allSettled([getJson(GATEWAY.replace(/\/v1$/, "") + "/health", 15000), getJson(EXPLORER + "/api/session-offers?limit=5", 15000)]);
   res.gateway = health.status === "fulfilled" ? (health.value.body && health.value.body.status) || "HTTP " + health.value.status : "unreachable";
+  const ob = offers.status === "fulfilled" && offers.value.ok && offers.value.body ? offers.value.body : null;
+  res.sessionOffers = ob && ob.pagination ? ob.pagination.total : null;
+  res.offers = ob && Array.isArray(ob.data) ? ob.data : [];
   const { ApiPromise, WsProvider } = await import("@polkadot/api");
   const provider = new WsProvider(RPC, 0);
   try {
-    await withTimeout(provider.connect(), 20000, "RPC connect");
+    await withTimeout(new Promise((resolve, reject) => {
+      provider.on("connected", resolve);
+      provider.on("error", () => reject(new Error("can't connect to " + RPC)));
+      provider.connect().catch(reject);
+    }), 15000, "RPC connect");
     const api = await withTimeout(ApiPromise.create({ provider, noInitWarn: true, throwOnConnect: true }), 30000, "Chain metadata");
     res.runtime = api.runtimeVersion.specVersion.toNumber();
     res.attestProfiles = (await withTimeout(api.rpc.state.getKeysPaged(ATTEST_PREFIX, 20), 20000, "Profile read")).length;
@@ -259,7 +266,8 @@ const check = async () => {
     "Gateway key:  " + res.gatewayKey + (res.gatewayKey === "set" ? " (validity is only known after a call)" : ""),
     "Wallet:       " + (res.wallet ? res.wallet + ", " + res.walletFlop : "FLOP_KEYSTORE not set"),
     "Direct chat:  " + (res.attestProfiles === undefined ? "unknown" : res.attestProfiles ? res.attestProfiles + " appraisal profile(s) registered" : "no appraisal profiles yet (issue 18)"),
-    "Direct mode:  needs a miner session endpoint; none is public on devnet yet",
+    "Offers:       " + (res.sessionOffers === null ? "unknown (explorer unreachable)" : res.sessionOffers ? res.sessionOffers + " miner session offer(s) listed" : "no miner session offers yet (issue 124)"),
+    "Direct mode:  " + (res.sessionOffers ? "a miner may be reachable; ask its operator for the --endpoint" : "needs a miner session endpoint; none is public on devnet yet"),
   ];
   return { res, lines };
 };
@@ -270,7 +278,8 @@ const main = async () => {
   if (o.version) { console.log(VERSION); return; }
   if (!cmd || cmd === "help" || o.help) { process.stdout.write(HELP); return; }
   const print = (x) => console.log(o.json ? JSON.stringify(x.res, null, 2) : x.lines.join("\n"));
-  if (cmd === "check") { return print(await check()); }
+  // The RPC client can leave sockets or timers open after a failed connect, so exit explicitly.
+  if (cmd === "check") { print(await check()); process.exit(0); }
   if (cmd === "models") { return print(await models()); }
   if (cmd === "channel") { return print(await channel(o._[1])); }
   if (cmd === "history") { const h = readHistory().slice(-10); return print({ res: h, lines: h.length ? h.map((x) => x.at.slice(0, 16).replace("T", " ") + "  " + x.command.padEnd(9) + " " + x.mode.padEnd(7) + " " + (x.channelId || "no channel")) : ["No calls saved yet."] }); }
