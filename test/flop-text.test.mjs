@@ -21,6 +21,7 @@ before(async () => {
       const send = (code, obj) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
       if (req.url === "/v1/models") { return send(200, { data: [{ id: "qwen/qwen2.5-0.5b-instruct" }, { id: "qwen/qwen3-8b" }] }); }
       if (req.url === "/health") { return send(200, { status: "ok" }); }
+      if (req.url.startsWith("/api/session-offers")) { return send(200, { data: [], pagination: { total: 0 } }); }
       if (req.url === "/v1/chat/completions") {
         if (req.headers.authorization === "Bearer expired") { return send(401, { error: "api_key_expired", message: "The provided API key has expired." }); }
         if (req.headers.authorization === "Bearer busy" && busyLeft > 0) { busyLeft--; return send(429, { error: "gateway channel pool is full" }); }
@@ -155,6 +156,14 @@ test("direct mode parses CLI JSON output", async () => {
   assert.equal(r.out.trim(), "Xin chao");
   assert.match(r.err, /mode direct/);
   assert.doesNotMatch(r.err, /gateway account/);
+});
+
+test("check reports gateway health and session offers even when the chain is unreachable", async () => {
+  const r = await run(["check"], { FLOP_RPC_URL: "ws://127.0.0.1:9" });
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /Gateway: +ok/);
+  assert.match(r.out, /Offers: +no miner session offers yet/);
+  assert.match(r.out, /Chain: +unreachable/);
 });
 
 test("help and version", async () => {
